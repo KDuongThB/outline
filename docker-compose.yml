@@ -44,15 +44,12 @@ services:
       - "9000:9000"
       - "9001:9001"
     entrypoint: sh
-    command: -c 'minio server --console-address ":9001" /data/minio'
+    command: -c 'export MINIO_ROOT_USER= ${MINIO_ROOT_USER}; export MINIO_ROOT_PASSWORD= ${MINIO_ROOT_PASSWORD}; minio server --console-address ":9001" /data/minio'
     deploy:
       restart_policy:
         condition: on-failure
     volumes:
       - storage-data:/data
-    environment:
-      MINIO_ROOT_USER: 'minio'
-      MINIO_ROOT_PASSWORD: 'miniostorage'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
