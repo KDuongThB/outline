@@ -1,0 +1,118 @@
+version: "3"
+services:
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+    user: "redis:redis"
+    env_file: ./docker.env
+    volumes:
+      - ./redis.conf:/redis.conf
+    command: ["redis-server", "/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 3
+    networks:
+      - keycloak_stack
+
+  postgres:
+    image: postgres
+    ports:
+      - "5432:5432"
+    env_file: ./docker.env
+    user: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - keycloak_stack
+
+  storage:
+    image: minio/minio
+    env_file: ./docker.env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    entrypoint: sh
+    command: -c 'minio server --console-address ":9001" /data/minio'
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - storage-data:/data
+    environment:
+      MINIO_ROOT_USER: 'minio'
+      MINIO_ROOT_PASSWORD: 'miniostorage'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - keycloak_stack
+
+  outline:
+    image: outlinewiki/outline
+    env_file: ./docker.env
+    ports:
+      - "9090:9090"
+    depends_on:
+      - postgres
+      - redis
+      - storage
+    networks:
+      - keycloak_stack
+
+  postgresk:
+      image: docker.io/postgres
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+      ports:
+        - 5433:5432
+      environment:
+        POSTGRES_DB: ${POSTGRES_DB}
+        POSTGRES_USER: ${POSTGRES_USER}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      networks:
+      - stack
+
+  keycloak:
+      image: quay.io/keycloak/keycloak:20.0.2
+      env_file: ./.env
+      ports:
+        - "8080:8080"
+      expose: 
+        - "8080"
+      command: start-dev
+      environment:
+        KC_DB: postgres
+        KC_DB_URL: jdbc:postgresql://postgresk:5432/keycloak
+        KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+        KC_DB_USERNAME: ${POSTGRES_USER}
+        KC_DB_SCHEMA: public
+        # Uncomment the line below if you want to specify JDBC parameters. The parameter below is just an example, and it shouldn't be used in production without knowledge. It is highly recommended that you read the PostgreSQL JDBC driver documentation in order to use it.
+        #JDBC_PARAMS: "ssl=true"
+      networks:
+        - stack
+      depends_on:
+        - postgresk
+  
+volumes:
+  storage-data:
+  database-data:
+  postgres_data:
+
+networks:
+  stack:
+  keycloak_stack:
+    external: true
